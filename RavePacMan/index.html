@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAVE-PACMAN (Pac-Man Avanzato)</title>
+    <style>
+        /* Stile di base per il corpo della pagina */
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #000; /* Sfondo nero tipico dei giochi arcade */
+            color: #fff;
+            font-family: 'Arial', sans-serif;
+        }
+
+        /* Stile per il container del gioco e il titolo */
+        #game-container {
+            border: 4px solid #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 0, 0.7); /* Effetto neon */
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: #222;
+        }
+
+        /* Stile per il canvas */
+        canvas {
+            display: block;
+            background-color: #000;
+        }
+
+        /* Stile per il pannello delle informazioni */
+        #info-panel {
+            width: 100%;
+            text-align: center;
+            padding: 10px 0;
+            font-size: 1.5rem;
+            color: #ff0;
+            text-shadow: 0 0 5px #ff0;
+        }
+
+        /* Stile per i messaggi di stato */
+        #message-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            transition: opacity 0.5s;
+        }
+
+        #message-box {
+            background-color: #333;
+            border: 4px solid #ff0;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 0 15px #ff0;
+        }
+
+        #message-box button {
+            background-color: #ff0;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin-top: 20px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        #message-box button:hover {
+            background-color: #fff;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>RAVE-PACMAN</h1>
+
+    <div id="game-container">
+        <div id="info-panel">
+            Punteggio: <span id="score-display">0</span>
+        </div>
+        <canvas id="gameCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <!-- Overlay per i messaggi di stato (Inizio/Vittoria/Sconfitta) -->
+    <div id="message-overlay">
+        <div id="message-box">
+            <h2>RAVE-PACMAN</h2>
+            <p>Raccogli tutti i puntini evitando le Polissiotte!</p>
+            <p>Usa i tasti freccia (↑ ↓ ← →) o WASD per impostare la direzione.</p>
+            <button id="startButton">Inizia il Gioco</button>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // Variabili globali per l'interazione con la canvas
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+        const overlay = document.getElementById('message-overlay');
+        const startButton = document.getElementById('startButton');
+
+        // Configurazione del gioco
+        const TILE_SIZE = 40; // Dimensione di ogni "quadrato" nel labirinto (Base)
+        const IMAGE_SIZE = TILE_SIZE * 2; // Le immagini sono il doppio della dimensione del blocco (80px)
+        // Offset per centrare l'immagine 2x sul blocco 1x (sporge di TILE_SIZE / 2 per lato, ovvero il 25% del blocco)
+        const IMAGE_OFFSET = -TILE_SIZE / 2; 
+
+        const GAME_SPEED = 150; // Millisecondi tra un "tick" logico e l'altro
+        let gameRunning = false;
+        let score = 0;
+        let dotsRemaining = 0;
+        let gameInterval; // Per controllare il loop logico
+
+        // ---------------------------------------------------------------------
+        // CONFIGURAZIONE IMMAGINI
+        // ---------------------------------------------------------------------
+        // Percorsi relativi alla cartella IMG/
+        const PLAYER_IMAGE_URL = './img/pacman.png'; 
+        const GHOST_IMAGE_VITTORIA_URL = './img/fantasma1.png'; // Polissiotta Vittoria
+        const GHOST_IMAGE_DEAMIRA_URL = './img/fantasma2.png'; // Polissiotta Deamira
+
+        // Oggetti Image per caricare gli asset
+        const playerImg = new Image();
+        playerImg.src = PLAYER_IMAGE_URL;
+
+        const ghostVittoriaImg = new Image();
+        ghostVittoriaImg.src = GHOST_IMAGE_VITTORIA_URL;
+
+        const ghostDeamiraImg = new Image();
+        ghostDeamiraImg.src = GHOST_IMAGE_DEAMIRA_URL;
+
+        // Mappa per associare i colori dei fantasmi agli oggetti Image e ai nomi
+        const ghostImages = {
+            'red': { img: ghostVittoriaImg, name: "Polissiotta Vittoria", sound: 'sound1' },
+            'pink': { img: ghostDeamiraImg, name: "Polissiotta Deamira", sound: 'sound2' }
+        };
+        // ---------------------------------------------------------------------
+
+        // ---------------------------------------------------------------------
+        // CONFIGURAZIONE AUDIO
+        // ---------------------------------------------------------------------
+        // Percorsi relativi alla cartella AUD/
+        const SOUND_MENU_URL = './aud/menu.mp3'; 
+        const SOUND_GAME_URL = './aud/game.mp3'; // NUOVO AUDIO PER IL GIOCO
+        const SOUND_VITTORIA_URL = './aud/suono1.mp3'; 
+        const SOUND_DEAMIRA_URL = './aud/suono2.mp3'; 
+
+        // Oggetti Audio per i suoni
+        const audioMenu = new Audio(SOUND_MENU_URL); 
+        const audioGame = new Audio(SOUND_GAME_URL); // Audio di sottofondo del gioco
+        const audioVittoria = new Audio(SOUND_VITTORIA_URL);
+        const audioDeamira = new Audio(SOUND_DEAMIRA_URL);
+
+        // Mappa per un facile riferimento
+        const sounds = {
+            'menu': audioMenu,
+            'game': audioGame,
+            'sound1': audioVittoria,
+            'sound2': audioDeamira
+        };
+        
+        // Funzione per riprodurre un suono una volta
+        function playSound(name) {
+            const audio = sounds[name];
+            if (audio) {
+                audio.currentTime = 0; // Riproduci dall'inizio
+                audio.play().catch(e => console.error("Errore durante la riproduzione audio:", e));
+            }
+        }
+        
+        // Funzione per controllare la riproduzione del loop
+        function toggleLoopSound(name, play) {
+            const audio = sounds[name];
+            if (audio) {
+                if (play) {
+                    audio.loop = true;
+                    // Tenta di riprodurre, gestisce il potenziale errore se l'interazione utente non è avvenuta
+                    audio.play().catch(e => console.log(`Impossibile avviare l'audio ${name}. Necessaria interazione utente.`));
+                } else {
+                    audio.pause();
+                    audio.currentTime = 0;
+                }
+            }
+        }
+        // ---------------------------------------------------------------------
+
+
+        // Definizione del labirinto (MAPPA)
+        // 0 = Puntino (Dot)
+        // 1 = Muro (Wall)
+        // 2 = Vuoto (Empty space)
+        // 3 = Posizione iniziale del giocatore
+        const MAP_ORIGINAL = [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1],
+            [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+            [1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ];
+        // Crea una copia della mappa per consentire il reset del gioco
+        let MAP = JSON.parse(JSON.stringify(MAP_ORIGINAL));
+
+        // Oggetto che rappresenta il giocatore (Mangia-Puntini)
+        let player = {
+            x: 1,
+            y: 1,
+            // Direzione corrente di movimento (0 se fermo)
+            currentDx: 0,
+            currentDy: 0,
+            // Direzione richiesta per il prossimo turno (buffer per le curve)
+            nextDx: 0,
+            nextDy: 0,
+            radius: TILE_SIZE / 2.5,
+            color: 'yellow'
+        };
+
+        // Struttura e array per i Fantasmi
+        let ghosts = [];
+        const DIRECTIONS = [[0, -1], [0, 1], [-1, 0], [1, 0]]; // Up, Down, Left, Right
+
+        function createGhost(x, y, color, startDx, startDy) {
+            return {
+                x: x,
+                y: y,
+                dx: startDx,
+                dy: startDy,
+                color: color,
+                radius: TILE_SIZE / 2.5
+            };
+        }
+
+        // ---------------------------------------------------------------------
+        // 1. Funzioni di Disegno (DRAWING FUNCTIONS)
+        // ---------------------------------------------------------------------
+
+        // Funzione per disegnare il labirinto
+        function drawMap() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let y = 0; y < MAP.length; y++) {
+                for (let x = 0; x < MAP[y].length; x++) {
+                    const tile = MAP[y][x];
+                    const px = x * TILE_SIZE;
+                    const py = y * TILE_SIZE;
+
+                    if (tile === 1) {
+                        // Disegna un Muro (Wall)
+                        ctx.fillStyle = 'blue';
+                        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+                    } else if (tile === 0) {
+                        // Disegna un Puntino (Dot)
+                        ctx.fillStyle = 'white';
+                        ctx.beginPath();
+                        ctx.arc(px + TILE_SIZE / 2, py + TILE_SIZE / 2, TILE_SIZE / 8, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+
+        // Funzione per disegnare il giocatore (Mangia-Puntini) - ORA USA IMMAGINI DOPPIE
+        function drawPlayer() {
+            const px = player.x * TILE_SIZE;
+            const py = player.y * TILE_SIZE;
+
+            // 1. Prova a disegnare l'immagine se è stata caricata
+            if (playerImg.complete) {
+                // Disegna l'immagine 2x, centrata sul blocco (TILE_SIZE + IMAGE_OFFSET)
+                ctx.drawImage(playerImg, px + IMAGE_OFFSET, py + IMAGE_OFFSET, IMAGE_SIZE, IMAGE_SIZE);
+            } else {
+                // 2. Fallback: Se l'immagine non è pronta, disegna il cerchio di base
+                const cx = player.x * TILE_SIZE + TILE_SIZE / 2;
+                const cy = player.y * TILE_SIZE + TILE_SIZE / 2;
+
+                ctx.fillStyle = player.color;
+                ctx.beginPath();
+                // Disegna il cerchio
+                ctx.arc(cx, cy, player.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Funzione per disegnare un Fantasma - ORA USA IMMAGINI DOPPIE
+        function drawGhost(ghost) {
+            const px = ghost.x * TILE_SIZE;
+            const py = ghost.y * TILE_SIZE;
+            
+            // Ottieni l'oggetto contenente l'immagine (img) e il nome
+            const ghostData = ghostImages[ghost.color];
+            const ghostImg = ghostData ? ghostData.img : null;
+
+
+            // 1. Prova a disegnare l'immagine se è stata caricata
+            if (ghostImg && ghostImg.complete) {
+                // Disegna l'immagine 2x, centrata sul blocco (TILE_SIZE + IMAGE_OFFSET)
+                ctx.drawImage(ghostImg, px + IMAGE_OFFSET, py + IMAGE_OFFSET, IMAGE_SIZE, IMAGE_SIZE);
+            } else {
+                // 2. Fallback: Se l'immagine non è pronta, disegna la forma geometrica
+                const cx = ghost.x * TILE_SIZE + TILE_SIZE / 2;
+                const cy = ghost.y * TILE_SIZE + TILE_SIZE / 2;
+
+                ctx.fillStyle = ghost.color;
+                ctx.beginPath();
+                // Disegna il corpo (semplificato)
+                ctx.arc(cx, cy, ghost.radius, Math.PI, 0, false);
+                // Rettangolo per la parte inferiore
+                ctx.rect(cx - ghost.radius, cy, ghost.radius * 2, ghost.radius * 1.1);
+                ctx.fill();
+
+                // Occhi (bianchi)
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(cx - ghost.radius / 3, cy - ghost.radius / 3, ghost.radius / 6, 0, Math.PI * 2);
+                ctx.arc(cx + ghost.radius / 3, cy + ghost.radius / 3, ghost.radius / 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 2. Logica di Gioco (GAME LOGIC)
+        // ---------------------------------------------------------------------
+
+        // Controlla se una mossa è valida (non si sbatte contro un muro)
+        function isWallCollision(x, y) {
+            if (y >= 0 && y < MAP.length && x >= 0 && x < MAP[y].length) {
+                return MAP[y][x] === 1; // 1 = Muro
+            }
+            return true; // Considera fuori dai bordi come un muro
+        }
+
+        // Logica di movimento dei fantasmi (IA molto semplice: casuale agli incroci)
+        function moveGhosts() {
+            ghosts.forEach(ghost => {
+                let nextX = ghost.x + ghost.dx;
+                let nextY = ghost.y + ghost.dy;
+                
+                // Se c'è una collisione con il muro (o un incrocio dove la direzione corrente si blocca)
+                if (isWallCollision(nextX, nextY) || (Math.random() < 0.2)) { // 20% di possibilità di cambiare direzione ad ogni "tick"
+                    let validMoves = [];
+                    
+                    // Trova tutte le direzioni valide che non fanno tornare indietro
+                    DIRECTIONS.forEach(([newDx, newDy]) => {
+                        const checkX = ghost.x + newDx;
+                        const checkY = ghost.y + newDy;
+                        // Controlla se non è un muro E non è l'inversione di 180 gradi
+                        if (!isWallCollision(checkX, checkY) && (newDx !== -ghost.dx || newDy !== -ghost.dy)) {
+                            validMoves.push({ dx: newDx, dy: newDy });
+                        }
+                    });
+
+                    if (validMoves.length > 0) {
+                        // Scegli una direzione casuale tra quelle valide
+                        const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
+                        ghost.dx = randomMove.dx;
+                        ghost.dy = randomMove.dy;
+                    } else {
+                        // Se non ci sono mosse valide tranne tornare indietro, torna indietro (intrappolato)
+                        ghost.dx = -ghost.dx;
+                        ghost.dy = -ghost.dy;
+                    }
+                    
+                    // Ricalcola la prossima posizione con la nuova direzione
+                    nextX = ghost.x + ghost.dx;
+                    nextY = ghost.y + ghost.dy;
+                }
+                
+                // Muovi il fantasma alla nuova posizione
+                ghost.x = nextX;
+                ghost.y = nextY;
+            });
+        }
+
+        // Controlla se il giocatore ha toccato un fantasma
+        function checkGhostCollision() {
+            for (const ghost of ghosts) {
+                if (player.x === ghost.x && player.y === ghost.y) {
+                    return ghost; // Restituisce l'oggetto fantasma che ha colpito
+                }
+            }
+            return null; // Nessuna collisione
+        }
+
+        // Il "tick" logico del gioco (Aggiorna posizioni, collisioni, punteggio)
+        function updateGameLogic() {
+            if (!gameRunning) return;
+
+            // 1. Prova a passare alla direzione successiva richiesta (buffer di curva)
+            if (player.nextDx !== 0 || player.nextDy !== 0) {
+                const nextX = player.x + player.nextDx;
+                const nextY = player.y + player.nextDy;
+                
+                if (!isWallCollision(nextX, nextY)) {
+                    // La mossa richiesta è valida, cambia la direzione corrente
+                    player.currentDx = player.nextDx;
+                    player.currentDy = player.nextDy;
+                    player.nextDx = 0; // Pulisci il buffer
+                    player.nextDy = 0;
+                }
+            }
+
+            // 2. MUOVI IL GIOCATORE in base alla direzione corrente
+            const nextX = player.x + player.currentDx;
+            const nextY = player.y + player.currentDy;
+
+            if (!isWallCollision(nextX, nextY)) {
+                // Se la mossa corrente è valida, muovi il giocatore
+                player.x = nextX;
+                player.y = nextY;
+
+                // Raccolta del Puntino
+                if (MAP[player.y][player.x] === 0) {
+                    score += 10;
+                    dotsRemaining--;
+                    MAP[player.y][player.x] = 2; // Rimuove il puntino
+                    scoreDisplay.textContent = score;
+
+                    // Condizione di Vittoria
+                    if (dotsRemaining === 0) {
+                        gameRunning = false;
+                        toggleLoopSound('game', false); // Ferma l'audio di gioco
+                        // Il menu.mp3 ripartirà dentro showEndMessage
+                        showEndMessage("Hai Vinto! Ottimo lavoro, RAVE-PACMAN!"); 
+                    }
+                }
+            } else {
+                // Se c'è collisione, il giocatore si ferma
+                player.currentDx = 0;
+                player.currentDy = 0;
+            }
+
+            // 3. MUOVI I FANTASMI
+            moveGhosts();
+
+            // 4. CONTROLLA LA COLLISIONE GIOCATORE/FANTASMA
+            const collidedGhost = checkGhostCollision();
+            if (collidedGhost) {
+                gameRunning = false;
+                
+                // --- MODIFICA CRITICA QUI ---
+                // Ferma l'audio di gioco (game.mp3)
+                toggleLoopSound('game', false);
+                // ASSICURATI che l'audio del menu (menu.mp3) sia fermo (non deve ripartire)
+                toggleLoopSound('menu', false);
+                // ---------------------------
+
+                // Ottieni il nome e il suono del fantasma
+                const ghostData = ghostImages[collidedGhost.color];
+                const ghostName = ghostData.name;
+                const soundName = ghostData.sound;
+
+                // Riproduci il suono specifico della cattura
+                playSound(soundName);
+
+                showEndMessage(`GAME OVER! Sei stato catturato da ${ghostName}!`);
+            }
+        }
+
+
+        // ---------------------------------------------------------------------
+        // 3. Input dell'Utente e Ciclo di Gioco (INPUT & GAME LOOP)
+        // ---------------------------------------------------------------------
+
+        // Gestione dell'input da tastiera
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+
+            // La direzione è impostata nel buffer (nextDx/nextDy)
+            let newDx = 0;
+            let newDy = 0;
+
+            switch (e.key) {
+                case 'ArrowUp':
+                case 'w':
+                    newDy = -1;
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    newDy = 1;
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                    newDx = -1;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    newDx = 1;
+                    break;
+            }
+            
+            // Imposta il buffer di direzione se è stata premuta una freccia valida
+            if (newDx !== 0 || newDy !== 0) {
+                player.nextDx = newDx;
+                player.nextDy = newDy;
+            }
+        });
+
+        // La funzione principale del loop di disegno (chiamata dal browser)
+        function gameLoop() {
+            // Questo loop si occupa SOLO di ridisegnare la scena
+            if (gameRunning) {
+                drawMap();
+                drawPlayer();
+                ghosts.forEach(drawGhost);
+            }
+
+            // Richiede al browser di chiamare gameLoop prima del prossimo repaint
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ---------------------------------------------------------------------
+        // 4. Interfaccia Utente (UI) e Inizializzazione
+        // ---------------------------------------------------------------------
+
+        // Funzione per inizializzare o resettare lo stato del gioco
+        function initializeGame() {
+            // 1. GESTIONE AUDIO: Ferma l'audio del menu e avvia l'audio del gioco in loop
+            toggleLoopSound('menu', false); 
+            toggleLoopSound('game', true); // Avvia l'audio del gioco in loop
+
+            // Resetta la MAPPA e i contatori
+            MAP = JSON.parse(JSON.stringify(MAP_ORIGINAL)); // Resetta la mappa dalla copia originale
+            score = 0;
+            dotsRemaining = 0;
+            scoreDisplay.textContent = score;
+
+            // Trova la posizione iniziale del giocatore e conta i puntini
+            for (let y = 0; y < MAP.length; y++) {
+                for (let x = 0; x < MAP[y].length; x++) {
+                    if (MAP[y][x] === 3) {
+                        player.x = x;
+                        player.y = y;
+                        MAP[y][x] = 2; // Rende il punto di partenza vuoto
+                    }
+                    if (MAP[y][x] === 0) {
+                        dotsRemaining++; // Conta tutti i puntini
+                    }
+                }
+            }
+            
+            // Inizializza la posizione e la direzione del giocatore
+            player.currentDx = 0;
+            player.currentDy = 0;
+            player.nextDx = 0;
+            player.nextDy = 0;
+
+            // Inizializza i fantasmi
+            ghosts = [
+                // Fantasma Rosso (Vittoria): Partenza in basso a destra, si muove a sinistra
+                createGhost(MAP[0].length - 2, MAP.length - 2, 'red', -1, 0), 
+                // Fantasma Rosa (Deamira): Partenza in basso a sinistra, si muove a destra
+                createGhost(1, MAP.length - 2, 'pink', 1, 0) 
+            ];
+
+            gameRunning = true;
+            
+            // Avvia il loop logico a velocità fissa
+            clearInterval(gameInterval); // Pulisci l'intervallo precedente
+            gameInterval = setInterval(updateGameLogic, GAME_SPEED); 
+
+            // Nascondi l'overlay
+            overlay.style.opacity = '0';
+            setTimeout(() => overlay.style.display = 'none', 500); 
+        }
+
+        // Mostra il messaggio di fine partita/vittoria/sconfitta
+        function showEndMessage(message) {
+            clearInterval(gameInterval); // Ferma il gioco logico
+            
+            const messageBox = document.getElementById('message-box');
+            
+            // Colore del testo diverso in caso di vittoria o sconfitta
+            const color = message.includes("Vinto") ? '#0f0' : '#f00';
+
+            messageBox.innerHTML = `
+                <h2 style="color: ${color};">${message}</h2>
+                <p>Punteggio Finale: ${score}</p>
+                <button id="restartButton">Gioca Ancora</button>
+            `;
+            document.getElementById('restartButton').addEventListener('click', () => {
+                // Ricarica la pagina per resettare la mappa e lo stato
+                window.location.reload();
+            });
+
+            overlay.style.display = 'flex';
+            overlay.style.opacity = '1';
+
+            // --- LOGICA AUDIO AGGIORNATA QUI ---
+            if (message.includes("Vinto")) {
+                // Se hai vinto, riavvia l'audio del menu come celebrazione
+                toggleLoopSound('menu', true);
+            } else {
+                // Se hai perso, l'audio del menu rimane fermo (come deciso nella logica di collisione)
+                toggleLoopSound('menu', false);
+            }
+            // ------------------------------------
+        }
+
+        // Listener per il pulsante di inizio
+        startButton.addEventListener('click', initializeGame);
+
+        // Avvia il loop di disegno (rendering) e l'audio del menu all'avvio della pagina
+        window.onload = function() {
+            // Imposta la canvas alle dimensioni della mappa
+            canvas.width = MAP[0].length * TILE_SIZE;
+            canvas.height = MAP.length * TILE_SIZE;
+            
+            // Avvia l'audio del menu in loop (schermata iniziale)
+            toggleLoopSound('menu', true);
+            
+            gameLoop();
+        };
+
+    </script>
+</body>
+</html>
