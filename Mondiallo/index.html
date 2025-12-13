@@ -1,0 +1,1657 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ordine Mondiallo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Stili per il contenitore del gioco */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; 
+            color: #e2e8f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            border: 4px solid #f97171; 
+            box-shadow: 0 0 30px rgba(249, 113, 113, 0.6);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 1000px; 
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            aspect-ratio: 16 / 9; 
+        }
+
+        .stats-bar {
+            background-color: #2d3748;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid #4a5568;
+        }
+
+        /* 1. Schermata Messaggio (Menu, Pausa, Game Over Testo) */
+        .game-message {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            
+            background-size: cover;
+            background-position: center;
+            background-blend-mode: multiply; 
+            
+            display: none; 
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+        }
+
+        /* 2. LAYER Morte Temporanea (Per background2.jpg e PNG) */
+        #deathImageContainer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: 15; 
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            
+            /* Sfondo Fisso per Morte Temporanea */
+            background-image: url('img/background2.jpg'); 
+            background-size: cover;
+            background-position: center;
+            background-color: rgba(0, 0, 0, 1); 
+            background-blend-mode: normal;
+        }
+
+        /* Immagine del personaggio (si sovrappone al background2.jpg) */
+        #deathCharacterImage {
+            max-width: 100%;
+            max-height: 80%; 
+            object-fit: contain;
+            z-index: 16;
+            display: none; 
+        }
+
+        /* DARDO: Posizione assoluta e dimensioni */
+        #dartImage {
+            position: absolute;
+            width: 80px; 
+            height: auto;
+            z-index: 17;
+            display: none; 
+        }
+        
+        /* CANVAS PER IL LATTE */
+        #milkSprayCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 17; 
+            display: none;
+            pointer-events: none; /* Permette di cliccare attraverso il canvas */
+        }
+
+
+        /* Contenuto Messaggio (Testo e Bottone) */
+        .message-content {
+            z-index: 18; /* Assicura che il testo sia sempre in primo piano */
+            position: relative; 
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .game-message button {
+            transition: all 0.3s ease;
+        }
+
+        .game-message button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(249, 113, 113, 0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <div class="stats-bar">
+            <h1 class="text-2xl font-extrabold text-red-400">Ordine Mondiallo</h1>
+            <span class="text-xl font-bold">Punti: <span id="scoreDisplay">0</span></span>
+            <span class="text-xl font-bold text-red-400">Vite: <span id="livesDisplay">3</span></span>
+            
+            <span class="text-xl font-bold text-pink-400 flex items-center">
+                Cavallo: <span id="cavalloEnergyDisplay">0</span>/5 
+                <button 
+                    id="healButton" 
+                    class="bg-pink-600 hover:bg-pink-700 text-white font-bold py-1 px-3 rounded-md text-sm ml-2 disabled:opacity-50 transition duration-300"
+                    disabled 
+                    onclick="healAlly()">
+                    <span class="font-extrabold">S</span>pruzzo curativo
+                </button>
+            </span>
+            
+            <span class="text-xl font-bold text-orange-400 flex items-center ml-4">
+                Pattinatrice: 
+                <button 
+                    id="wolfPowerButton" 
+                    class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-1 px-3 rounded-md text-sm ml-2 disabled:opacity-50 transition duration-300"
+                    onclick="activateWolfPower()">
+                    <span class="font-extrabold">D</span> Potere Lupo
+                </button>
+            </span>
+
+            <span class="text-xl font-bold text-yellow-400 flex items-center ml-4">
+                Munizioni: <span id="ammoDisplay">0</span>/100
+            </span>
+
+
+            <span class="text-xl font-bold text-red-400">FPS: <span id="fpsDisplay">0</span></span>
+        </div>
+
+        <div class="relative">
+            <canvas id="gameCanvas"></canvas>
+            
+            <div id="deathImageContainer">
+                <img id="deathCharacterImage" src="" alt="Personaggio di Morte" style="display:none;">
+                <img id="dartImage" src="img/dardo.png" alt="Dardo" style="display:none;">
+                <canvas id="milkSprayCanvas"></canvas>
+            </div>
+
+            <div id="messageScreen" class="game-message">
+                <div class="message-content">
+                    <h1 id="messageTitle" class="text-5xl font-extrabold mb-4 text-red-400">Pronto a Partire?</h1>
+                    <p id="messageText" class="text-xl mb-8">Raccogli le pecore (+10) e schiva le mascherine (😷, -50) e le siringhe (perdi una vita)! Usa <span class="font-bold">S</span> per curare, <span class="font-bold">F</span> per sparare, <span class="font-bold">D</span> per il potere lupo.</p>
+                    <button 
+                        id="startButton" 
+                        class="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300"
+                        onclick="startGame()">
+                        Inizia Gioco
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <audio id="gameSoundtrack" loop>
+            <source src="aud/soundtrack.mp3" type="audio/mpeg">
+            Il tuo browser non supporta l'elemento audio.
+        </audio>
+        
+        <audio id="audioUnaFemmina"><source src="aud/unafemmina.mp3" type="audio/mpeg"></audio>
+        <audio id="audioClackson"><source src="aud/clackson.mp3" type="audio/mpeg"></audio>
+        <audio id="audioColpo"><source src="aud/colpo.mp3" type="audio/mpeg"></audio> 
+    </div>
+
+    <script>
+        // Variabili globali per il setup di Firebase (non usate, ma mantenute per coerenza con l'ambiente)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? initialAuthToken : null;
+
+        // Elementi DOM
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const livesDisplay = document.getElementById('livesDisplay'); 
+        const fpsDisplay = document.getElementById('fpsDisplay');
+        const messageScreen = document.getElementById('messageScreen'); 
+        const messageTitle = document.getElementById('messageTitle');
+        const messageText = document.getElementById('messageText');
+        const startButton = document.getElementById('startButton');
+        const gameSoundtrack = document.getElementById('gameSoundtrack');
+        const deathImageContainer = document.getElementById('deathImageContainer'); 
+        const deathCharacterImage = document.getElementById('deathCharacterImage'); 
+        const dartImage = document.getElementById('dartImage'); 
+        
+        // Elementi DOM Cavallo
+        const cavalloEnergyDisplay = document.getElementById('cavalloEnergyDisplay');
+        const healButton = document.getElementById('healButton');
+        
+        // Elementi DOM Munizioni
+        const ammoDisplay = document.getElementById('ammoDisplay');
+        
+        // Elementi Canvas per il Latte
+        const milkSprayCanvas = document.getElementById('milkSprayCanvas'); 
+        const milkSprayCtx = milkSprayCanvas.getContext('2d');
+        
+        // Elementi Audio Pattinatrice
+        const audioUnaFemmina = document.getElementById('audioUnaFemmina');
+        const audioClackson = document.getElementById('audioClackson');
+        const audioColpo = document.getElementById('audioColpo');
+        audioUnaFemmina.volume = 0.8;
+        audioClackson.volume = 0.8;
+        audioColpo.volume = 0.8;
+
+
+        // --- GESTIONE VOLUME ---
+        const VOLUME_NORMAL = 0.6; 
+        const VOLUME_MENU = 0.2;   
+
+        // --- GESTIONE IMMAGINI MORTE E RITARDO ---
+        const BASE_IMAGE_MS = 2000;  
+        const FLASH_IMAGE_MS = 1000; 
+        const LIVES_START = 3; 
+
+        const LIFE_IMAGES = {
+            3: {
+                base: 'img/gbionda.png', 
+                flash: 'img/gbionda2.png' 
+            },
+            2: {
+                base: 'img/lupo.png', 
+                flash: 'img/lupo2.png' 
+            },
+            1: 'img/game_over.jpg' 
+        };
+        
+        // COSTANTI DI TEMPO PER L'ANIMAZIONE DI GUARIGIONE
+        const FULL_FLOW_DURATION_MS = 750; 
+        const IMPACT_DELAY_MS = 500; 
+        const CLEANUP_DELAY_MS = 1000; 
+        
+        // --- NUOVO: GESTIONE FPS THROTTLE (120 FPS) ---
+        const FPS_LIMIT = 120;
+        const FRAME_DURATION = 1000 / FPS_LIMIT;
+        let lastFrameTime = 0; 
+
+
+        // --- GESTIONE ENERGIA CAVALLO ---
+        const CAVALLO_MAX_ENERGY = 5;
+        const PINK_SHEEP_CHANCE = 0.20; 
+        const PINK_SHEEP_GAIN = 1;
+        
+        // --- GESTIONE FUCILE E MUNIZIONI ---
+        const AMMO_MAX = 100;
+        const AMMO_GAIN = 10;
+        const AMMO_CHANCE = 0.20; 
+        const SHOT_COST = 1; 
+        
+        // NUOVE COSTANTI DI VELOCITÀ BASE (Pixels per Second - PPS)
+        const BASE_BULLET_SPEED_PPS = 900;  
+        const BASE_DOT_SPEED_PPS = 180;     
+        const BASE_VAN_SPEED_PPS = 300;     
+        // Modifica richiesta: 90 PPS
+        const BASE_SKATER_SPEED_PPS = 90;  
+
+        const BULLET_WIDTH = 8;
+        const BULLET_HEIGHT = 2;
+
+
+        // --- GESTIONE PATTINATRICE (Skater) ---
+        const SKATER_WIDTH = 50; 
+        const SKATER_HEIGHT = 40; 
+        const SKATER_ANIMATION_MS = 500; 
+        const SKATER_SPAWN_CHANCE = 0.05; 
+        const HITCH_GAP = 5; // Spazio tra gli agganciati
+
+        // FIX: Dichiarazioni per l'animazione pattinatrice e il trenino
+        let skaterImages = {}; // Contenitore per le immagini
+        let imagesLoaded = 0;
+        const TOTAL_IMAGES_TO_LOAD = 2; // skater1.png e skater2.png (da assumere)
+        let lastSkaterFrameTime = 0; 
+        let skaterImageIndex = 1; 
+        let hitchedEntities = []; // Elementi del trenino agganciato
+
+
+        // Costanti di Gioco
+        const GAME_WIDTH = 800;
+        const GAME_HEIGHT = 450;
+        const VAN_WIDTH = 80;
+        const VAN_HEIGHT = 40;
+        
+        const DOT_EMOJI_SIZE = 24; 
+        
+        const SYRINGE_WIDTH = 40; 
+        const SYRINGE_HEIGHT = 10; 
+        const SYRINGE_CHANCE = 0.15; 
+        const SPAWN_INTERVAL = 100;
+        const SCORE_GAIN = 10;
+        const SCORE_LOSS_VAN_MASK = 50; // Penalità Mascherina se colpita dal van
+        const SCORE_GAIN_BULLET_SYRINGE = 50; // NUOVO: Punti per dardo distrutto
+        const SCORE_GAIN_BULLET_MASK = 20; // NUOVO: Punti per mascherina distrutta
+
+        
+        // Stato del Gioco
+        let score = 0;
+        let lives = LIVES_START; 
+        let cavalloEnergy = 0; 
+        let ammunition = 0; 
+        let bullets = []; 
+        let isGameRunning = false;
+        let isPaused = false; 
+        let van;
+        let dots = []; 
+        let keys = {};
+        let frameCount = 0;
+        
+        // NUOVO: Moltiplicatore di velocità
+        let currentSpeedMultiplier = 1.0; 
+
+        // Gestione FPS
+        let lastUpdateTime = performance.now();
+        
+        // --------------------------------------------------------
+        // START BLOCCO: ANIMAZIONE CANVAS LATTE CURVO 
+        // --------------------------------------------------------
+        
+        const SPRAY_END_X = GAME_WIDTH - 380; 
+        const SPRAY_END_Y = 260; 
+        const SPRAY_START_X = GAME_WIDTH; 
+        const SPRAY_START_Y = 0; 
+        
+        const JET_CURVE_MAGNITUDE_R1800 = 17; 
+        const CP_X = (SPRAY_START_X + SPRAY_END_X) / 2; 
+        const CP_Y = (SPRAY_START_Y + SPRAY_END_Y) / 2 - JET_CURVE_MAGNITUDE_R1800; 
+        
+        const PARTICLE_COUNT_PER_FRAME = 5; 
+        const MAX_PARTICLE_LIFE = 40; 
+        const MAX_SPLASH_PARTICLES = 250; 
+        const PARTICLE_MAX_RADIUS = 5; 
+        
+        const ZAMPILLO_COUNT_PER_FRAME = 0.3; 
+        const MAX_ZAMPILLO_LIFE = 20; 
+        const MAX_ZAMPILLO_PARTICLES = 50; 
+        const ZAMPILLO_MAX_RADIUS = 2; 
+
+        let milkSprayAnimationId = null;
+        let splashParticles = []; 
+        let jetParticles = [];    
+        let isMilkFlowActive = false; 
+        let flowStartTime = null; 
+        let isFlowImpacted = false; 
+        
+        function getQuadraticBezierPoint(t) {
+            const P0 = { x: SPRAY_START_X, y: SPRAY_START_Y };
+            const P1 = { x: CP_X, y: CP_Y };
+            const P2 = { x: SPRAY_END_X, y: SPRAY_END_Y };
+            
+            const oneMinusT = (1 - t);
+            const oneMinusT2 = oneMinusT * oneMinusT;
+            const t2 = t * t;
+
+            const x = oneMinusT2 * P0.x + 2 * oneMinusT * t * P1.x + t2 * P2.x;
+            const y = oneMinusT2 * P0.y + 2 * oneMinusT * t * P1.y + t2 * P2.y;
+            
+            return { x, y };
+        }
+        
+        function updateParticles(particlesArray, gravity) {
+            let newArray = particlesArray.filter(p => p.life > 0);
+            newArray.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += gravity; 
+                p.life -= p.fadeRate;
+            });
+            return newArray;
+        }
+
+        function drawParticles(particlesArray) {
+            particlesArray.forEach(p => {
+                milkSprayCtx.beginPath();
+                const opacity = (p.life / p.maxLife) * 0.8; 
+                const radius = p.radius * (p.life / p.maxLife); 
+                milkSprayCtx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+                milkSprayCtx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+                milkSprayCtx.fill();
+            });
+        }
+        
+        function createSingleSplashParticle() {
+            const angleOffset = Math.PI * 0.5; 
+            const angleRange = Math.PI * 1.0; 
+            const angle = angleOffset + (Math.random() - 0.5) * angleRange; 
+            const speed = 2 + Math.random() * 6; 
+
+            return {
+                x: SPRAY_END_X,
+                y: SPRAY_END_Y,
+                vx: Math.cos(angle) * speed, 
+                vy: -Math.sin(angle) * speed, 
+                radius: 3 + Math.random() * PARTICLE_MAX_RADIUS, 
+                life: MAX_PARTICLE_LIFE, 
+                maxLife: MAX_PARTICLE_LIFE,
+                fadeRate: 1 
+            };
+        }
+        
+        function createSingleZampillo(x, y) {
+            const angleOffset = Math.PI * 0.5; 
+            const angleRange = Math.PI * 0.5; 
+            const angle = angleOffset + (Math.random() - 0.5) * angleRange; 
+            const speed = 0.5 + Math.random() * 2; 
+
+            return {
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed * (Math.random() > 0.5 ? 1 : -1), 
+                vy: -Math.sin(angle) * speed, 
+                radius: 1 + Math.random() * ZAMPILLO_MAX_RADIUS, 
+                life: MAX_ZAMPILLO_LIFE, 
+                maxLife: MAX_ZAMPILLO_LIFE,
+                fadeRate: 1 
+            };
+        }
+        
+        function drawContinuousMilkFlow(currentTime) {
+            
+            milkSprayCtx.clearRect(0, 0, milkSprayCanvas.width, milkSprayCanvas.height);
+            const elapsed = currentTime - flowStartTime;
+            let t_progress = Math.min(1, elapsed / FULL_FLOW_DURATION_MS);
+            
+            if (t_progress > 0) {
+                const currentPoint = getQuadraticBezierPoint(t_progress);
+
+                milkSprayCtx.beginPath();
+                milkSprayCtx.moveTo(SPRAY_START_X, SPRAY_START_Y);
+                milkSprayCtx.quadraticCurveTo(CP_X, CP_Y, currentPoint.x, currentPoint.y);
+                
+                milkSprayCtx.strokeStyle = 'rgba(255, 255, 255, 1)';
+                milkSprayCtx.lineWidth = 8;
+                milkSprayCtx.lineCap = 'round'; 
+                milkSprayCtx.stroke();
+                
+                if (t_progress >= 1 || isFlowImpacted) {
+                    milkSprayCtx.beginPath();
+                    milkSprayCtx.arc(SPRAY_END_X, SPRAY_END_Y, 8 * 2, 0, Math.PI * 2);
+                    milkSprayCtx.fillStyle = `rgba(255, 255, 255, 1)`;
+                    milkSprayCtx.fill();
+                    isFlowImpacted = true; 
+                }
+            }
+
+            if (isMilkFlowActive && isFlowImpacted) {
+                for (let i = 0; i < PARTICLE_COUNT_PER_FRAME; i++) {
+                    if (splashParticles.length < MAX_SPLASH_PARTICLES) {
+                        splashParticles.push(createSingleSplashParticle());
+                    }
+                }
+            }
+            
+            if (isMilkFlowActive && t_progress < 1) {
+                if (Math.random() < ZAMPILLO_COUNT_PER_FRAME) {
+                    const random_t = Math.random() * t_progress; 
+                    const jetPos = getQuadraticBezierPoint(random_t);
+                    
+                    if (jetParticles.length < MAX_ZAMPILLO_PARTICLES) {
+                         jetParticles.push(createSingleZampillo(jetPos.x, jetPos.y));
+                    }
+                }
+            }
+            
+            splashParticles = updateParticles(splashParticles, 0.3); 
+            drawParticles(splashParticles);
+            
+            jetParticles = updateParticles(jetParticles, 0.1); 
+            drawParticles(jetParticles);
+        }
+
+        function animateMilkSpray(currentTime) {
+            if (!isMilkFlowActive) return;
+            drawContinuousMilkFlow(currentTime);
+            milkSprayAnimationId = requestAnimationFrame(animateMilkSpray);
+        }
+        
+        function startMilkFlow() {
+            if (isMilkFlowActive) return;
+            isMilkFlowActive = true;
+            isFlowImpacted = false; 
+            flowStartTime = performance.now(); 
+            splashParticles = []; 
+            jetParticles = []; 
+            milkSprayCanvas.style.display = 'block';
+            animateMilkSpray(flowStartTime);
+        }
+
+        function stopMilkFlow() {
+            isMilkFlowActive = false;
+            isFlowImpacted = false; 
+            flowStartTime = null; 
+            if (milkSprayAnimationId) {
+                cancelAnimationFrame(milkSprayAnimationId);
+                milkSprayAnimationId = null;
+            }
+            splashParticles = []; 
+            jetParticles = []; 
+            milkSprayCtx.clearRect(0, 0, milkSprayCanvas.width, milkSprayCanvas.height);
+            milkSprayCanvas.style.display = 'none';
+        }
+        
+        // --------------------------------------------------------
+        // FUNZIONE DI CARICAMENTO IMMAGINI (FIX VISIBILITÀ)
+        // --------------------------------------------------------
+
+        function loadImages(callback) {
+            const imageSources = {
+                1: 'img/skater1.png', 
+                2: 'img/skater2.png'
+            };
+            let loadedCount = 0;
+            const totalCount = Object.keys(imageSources).length;
+
+            for (const key in imageSources) {
+                skaterImages[key] = new Image();
+                skaterImages[key].onload = () => {
+                    loadedCount++;
+                    if (loadedCount === totalCount) {
+                        callback();
+                    }
+                };
+                skaterImages[key].onerror = () => {
+                    console.error(`Impossibile caricare l'immagine: ${imageSources[key]}. Assicurarsi che i file siano presenti.`);
+                    // Procedi comunque, l'errore è gestito per non bloccare l'avvio
+                    loadedCount++;
+                    if (loadedCount === totalCount) {
+                        callback();
+                    }
+                };
+                skaterImages[key].src = imageSources[key];
+            }
+        }
+
+
+        // --------------------------------------------------------
+        // FUNZIONE GRAFICA PECORA ROSA 
+        // --------------------------------------------------------
+
+        function drawPinkSheep(context, x, y, size) {
+            const halfSize = size / 2;
+            const bodyRadiusY = halfSize * 0.49 - 5; 
+            const bodyRadiusX = halfSize * 0.9; 
+            const headColor = '#800080'; 
+            const featureColor = '#000000'; 
+
+            context.fillStyle = '#f472b6'; 
+            context.beginPath();
+            context.ellipse(x, y, bodyRadiusX, bodyRadiusY, 0, 0, Math.PI * 2);
+            context.closePath();
+            context.fill();
+            
+            context.beginPath();
+            const numSegments = 12;
+            const arcSize = (Math.PI * 2) / numSegments;
+            const fluffRadius = halfSize * 0.35;
+            for (let i = 0; i < numSegments; i++) {
+                const angle = i * arcSize;
+                const centerX = x + (bodyRadiusX + fluffRadius * 0.5) * Math.sin(angle);
+                const centerY = y - (bodyRadiusY + fluffRadius * 0.5) * Math.cos(angle); 
+                context.arc(centerX, centerY, fluffRadius, angle + Math.PI * 0.2, angle + Math.PI * 1.8, false);
+            }
+            context.fillStyle = '#f472b6';
+            context.fill();
+
+            const headX = x + halfSize * 1.3; 
+            const headY = (y - halfSize * 0.2) - 8; 
+            const headSize = halfSize * 0.4;
+
+            context.fillStyle = headColor; 
+            context.beginPath();
+            context.arc(headX, headY, headSize, 0, Math.PI * 2); 
+            context.fill();
+
+            context.fillStyle = featureColor; 
+            context.beginPath();
+            const ear1X = headX - headSize * 0.5;
+            const ear1Y = headY - headSize * 1.2;
+            context.moveTo(ear1X, ear1Y);
+            context.lineTo(ear1X + headSize * 0.3, ear1Y + headSize * 0.6);
+            context.lineTo(ear1X - headSize * 0.3, ear1Y + headSize * 0.6);
+            context.closePath();
+            context.fill();
+            
+            context.fillStyle = featureColor; 
+            const eyeSize = headSize * 0.15;
+            context.beginPath();
+            context.arc(headX + 3, headY - headSize * 0.1, eyeSize, 0, Math.PI * 2);
+            context.fill();
+            
+            context.fillStyle = featureColor; 
+            const legWidth = halfSize * 0.3;
+            const legHeight = halfSize * 0.6; 
+            const legY = (y + bodyRadiusY - 2) + 8; 
+
+            context.fillRect(x - halfSize * 0.7 - 2, legY, legWidth, legHeight);
+            context.fillRect(x + halfSize * 0.4 + 2, legY, legWidth, legHeight);
+        }
+
+        // --------------------------------------------------------
+        // CLASSI DEL GIOCO
+        // --------------------------------------------------------
+        
+        class Van {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = VAN_WIDTH;
+                this.height = VAN_HEIGHT;
+                this.color = '#ffffff'; 
+                this.defaultColor = '#ffffff';
+            }
+            update(speedPPS, deltaSeconds) {
+                const distance = speedPPS * deltaSeconds;
+                if (keys['ArrowUp'] && this.y > 0) this.y -= distance;
+                if (keys['ArrowDown'] && this.y < GAME_HEIGHT - this.height) this.y += distance;
+                if (keys['ArrowLeft'] && this.x > 0) this.x -= distance;
+                if (keys['ArrowRight'] && this.x < GAME_WIDTH - this.width) this.x += distance;
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                const redStripeHeight = this.height / 4;
+                const redStripeY = this.y + this.height * 0.5 - redStripeHeight / 2;
+                ctx.fillStyle = '#ff0000'; 
+                ctx.fillRect(this.x, redStripeY, this.width, redStripeHeight);
+                ctx.fillStyle = '#60a5fa';
+                const windowWidth = this.width / 3;
+                const windowHeight = this.height / 2;
+                ctx.fillRect(this.x + this.width / 2, this.y + 2, windowWidth, windowHeight - 4);
+                ctx.fillStyle = '#000000';
+                const wheelRadius = 8; 
+                ctx.beginPath();
+                ctx.arc(this.x + wheelRadius, this.y + this.height, wheelRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(this.x + this.width - wheelRadius, this.y + this.height, wheelRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        class Skater {
+            constructor(y) {
+                this.x = GAME_WIDTH;
+                this.y = y;
+                this.width = SKATER_WIDTH;
+                this.height = SKATER_HEIGHT;
+                this.isHitchable = false; // Attivato dal tasto 'D'
+                this.isHitched = false;
+                this.isLost = false; // Persa dopo un colpo di siringa (per il trenino)
+                this.isCrashed = false; // Crash dopo impatto frontale/senza potere
+                this.rotation = 0; // 0 o Math.PI / 2
+            }
+
+            update(speedPPS, dotSpeedPPS, deltaSeconds) {
+                if (this.isHitched || this.isLost) return; 
+                
+                // Se ha crashato, usa la velocità degli altri oggetti (Dots) per muoversi
+                let currentSpeedPPS = this.isCrashed ? dotSpeedPPS : speedPPS;
+                
+                const distance = currentSpeedPPS * deltaSeconds;
+                this.x -= distance;
+            }
+
+            draw() {
+                // Non disegnare se persa dal trenino (isLost)
+                if (this.isLost) return;
+                
+                ctx.save();
+                
+                const centerX = this.x + this.width / 2;
+                const centerY = this.y + this.height / 2;
+                
+                ctx.translate(centerX, centerY);
+                ctx.rotate(this.rotation); 
+                
+                const currentImage = skaterImages[skaterImageIndex];
+                
+                // Disegna l'immagine solo se caricata
+                if (currentImage && currentImage.complete) {
+                    ctx.drawImage(currentImage, -this.width / 2, -this.height / 2, this.width, this.height);
+                } else {
+                    // Placeholder se l'immagine non è ancora caricata (dovrebbe essere raro)
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+                    ctx.fillStyle = 'black';
+                    ctx.fillText('?', 0, 0);
+                }
+
+                // Indicatore visivo se agganciabile
+                if (!this.isHitched && this.isHitchable && !this.isCrashed) {
+                     ctx.fillStyle = 'rgba(255, 192, 203, 0.5)'; 
+                     ctx.beginPath();
+                     ctx.arc(0, 0, this.width / 2 + 5, 0, Math.PI * 2);
+                     ctx.fill();
+                }
+
+                ctx.restore();
+            }
+            
+            checkCollision(other) {
+                // Non controllare la collisione se già agganciata o crashata
+                if (this.isHitched || this.isCrashed) return false;
+                 return other.x < this.x + this.width &&
+                       other.x + other.width > this.x &&
+                       other.y < this.y + this.height &&
+                       other.y + other.height > this.y;
+            }
+        }
+        
+        class Dot {
+            constructor(y, type) {
+                this.x = GAME_WIDTH; 
+                this.y = y; 
+                this.type = type;
+                
+                if (type === 'pink') {
+                    this.emoji = ''; 
+                } else {
+                    this.emoji = type === 'red' ? '🐑' : '😷'; 
+                }
+                
+                this.radius = DOT_EMOJI_SIZE / 2; 
+                this.isCollected = false;
+                this.isHit = false; 
+            }
+            
+            update(speedPPS, deltaSeconds) { 
+                const distance = speedPPS * deltaSeconds;
+                this.x -= distance; 
+            }
+            
+            draw() {
+                if (this.type === 'pink') {
+                    drawPinkSheep(ctx, this.x, this.y, DOT_EMOJI_SIZE); 
+                } else {
+                    ctx.font = `${DOT_EMOJI_SIZE}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(this.emoji, this.x, this.y);
+                }
+            }
+            checkCollision(other) {
+                const closestX = Math.max(other.x, Math.min(this.x, other.x + other.width));
+                const closestY = Math.max(other.y, Math.min(this.y, other.y + other.height));
+                const distanceX = this.x - closestX;
+                const distanceY = this.y - closestY;
+                const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+                return distanceSquared < (this.radius * this.radius);
+            }
+        }
+        class Syringe {
+            constructor(y) {
+                this.x = GAME_WIDTH;
+                this.width = SYRINGE_WIDTH;
+                this.height = SYRINGE_HEIGHT;
+                this.y = y; 
+                this.isHit = false;
+                this.isCollected = false; 
+            }
+            update(speedPPS, deltaSeconds) { 
+                const distance = speedPPS * 1.5 * deltaSeconds; // Siringa leggermente più veloce
+                this.x -= distance; 
+            }
+            draw() {
+                ctx.fillStyle = '#ff0000'; 
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.fillStyle = '#cccccc';
+                const needleLength = 10; 
+                const needleOffset = 4;
+                ctx.beginPath();
+                ctx.moveTo(this.x + this.width, this.y + this.height / 2);
+                ctx.lineTo(this.x + this.width + needleLength, this.y + this.height / 2 - needleOffset);
+                ctx.lineTo(this.x + this.width + needleLength, this.y + this.height / 2 + needleOffset);
+                ctx.closePath();
+                ctx.fill();
+            }
+            checkCollision(other) {
+                return other.x < this.x + this.width &&
+                       other.x + other.width > this.x &&
+                       other.y < this.y + this.height &&
+                       other.y + other.height > this.y;
+            }
+        }
+
+        class AmmoKit {
+            constructor(y) {
+                this.width = 30;
+                this.height = 30;
+                this.x = GAME_WIDTH;
+                this.y = y - this.height / 2; 
+                this.isCollected = false;
+            }
+            update(speedPPS, deltaSeconds) { 
+                const distance = speedPPS * deltaSeconds;
+                this.x -= distance; 
+            }
+            draw() {
+                ctx.font = `${this.height}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('📦', this.x + this.width / 2, this.y + this.height / 2); 
+            }
+            checkCollision(other) {
+                return other.x < this.x + this.width &&
+                       other.x + other.width > this.x &&
+                       other.y < this.y + other.height &&
+                       other.y + other.height > this.y;
+            }
+        }
+        
+        class Bullet {
+            constructor(x, y) {
+                this.x = x + VAN_WIDTH; 
+                this.y = y + VAN_HEIGHT / 2;
+                this.width = BULLET_WIDTH;
+                this.height = BULLET_HEIGHT;
+                this.isHit = false;
+            }
+            update(speedPPS, deltaSeconds) {
+                const distance = speedPPS * deltaSeconds;
+                this.x += distance;
+            }
+            draw() {
+                ctx.fillStyle = '#FFD700'; // Dorato
+                ctx.fillRect(this.x, this.y - this.height / 2, this.width, this.height);
+            }
+            checkCollision(entity) {
+                const entityX = entity instanceof Dot ? entity.x - entity.radius : entity.x;
+                const entityY = entity instanceof Dot ? entity.y - entity.radius : entity.y;
+                const entityWidth = entity instanceof Dot ? entity.radius * 2 : (entity instanceof Syringe ? entity.width : entity.width);
+                const entityHeight = entity instanceof Dot ? entity.radius * 2 : (entity instanceof Syringe ? entity.height : entity.height);
+
+                return this.x + this.width > entityX &&
+                       this.x < entityX + entityWidth &&
+                       this.y > entityY && 
+                       this.y < entityY + entityHeight; 
+            }
+        }
+
+
+        // --------------------------------------------------------
+        // LOGICA DI GIOCO
+        // --------------------------------------------------------
+
+        function updateLivesDisplay() { 
+            let lifeIcons = '';
+            const lifeMap = { 3: '👧🏼', 2: '🐺', 1: '🐴' };
+            const lostLifeIcon = '🐑'; 
+            
+            for (let i = LIVES_START; i >= 1; i--) {
+                lifeIcons += (i <= lives) ? (lifeMap[i] || '❤️') : lostLifeIcon; 
+            }
+            livesDisplay.innerHTML = lifeIcons;
+        }
+
+        function updateCavalloDisplay() {
+            cavalloEnergyDisplay.textContent = cavalloEnergy;
+            
+            const isReadyToHeal = cavalloEnergy >= CAVALLO_MAX_ENERGY && lives < LIVES_START;
+
+            if (isReadyToHeal) {
+                healButton.disabled = false;
+                healButton.classList.remove('bg-pink-600', 'hover:bg-pink-700');
+                healButton.classList.add('bg-green-500', 'hover:bg-green-600');
+            } else {
+                healButton.disabled = true;
+                healButton.classList.remove('bg-green-500', 'hover:bg-green-600');
+                healButton.classList.add('bg-pink-600', 'hover:bg-pink-700');
+            }
+        }
+
+        function updateAmmoDisplay() {
+            ammoDisplay.textContent = ammunition;
+        }
+        
+        function showHealAnimation() {
+            const lifeToHeal = lives;
+            const imageSet = LIFE_IMAGES[lifeToHeal];
+            
+            if (!imageSet || lifeToHeal > LIVES_START || lifeToHeal === 1) {
+                // FIX: Assicura che la ripresa sia fluida anche se non c'è animazione
+                isPaused = false;
+                gameSoundtrack.volume = VOLUME_NORMAL;
+                const now = performance.now();
+                lastUpdateTime = now; 
+                lastFrameTime = now;
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            
+            messageScreen.style.display = 'none';
+            deathImageContainer.style.display = 'flex';
+            deathCharacterImage.src = imageSet.flash;
+            deathCharacterImage.style.display = 'block';
+
+            gameSoundtrack.volume = VOLUME_MENU;
+            dartImage.style.display = 'none'; 
+            
+            startMilkFlow(); // <-- Il ciclo di animazione delle particelle è partito
+            
+            const totalFlashDuration = FULL_FLOW_DURATION_MS + IMPACT_DELAY_MS;
+            
+            setTimeout(() => {
+                deathCharacterImage.src = imageSet.base;
+                
+                setTimeout(() => {
+                    // *** FIX PER IL LAG: FERMA IL CICLO DI ANIMAZIONE ***
+                    stopMilkFlow(); // <--- QUESTA È LA RIGA FONDAMENTALE DA AGGIUNGERE!
+
+                    keys = {};
+                    deathImageContainer.style.display = 'none';
+                    deathCharacterImage.style.display = 'none';
+
+                    gameSoundtrack.volume = VOLUME_NORMAL;
+                    isPaused = false;
+                    
+                    // --- FIX CRITICO: Resetta i riferimenti temporali per evitare gli "scatti" ---
+                    const now = performance.now();
+                    lastUpdateTime = now; 
+                    lastFrameTime = now;
+                    // ----------------------------------------------------------------------------
+
+                    requestAnimationFrame(gameLoop);
+                }, CLEANUP_DELAY_MS); 
+
+            }, totalFlashDuration); 
+        }
+
+        function healAlly() {
+            if (cavalloEnergy >= CAVALLO_MAX_ENERGY && lives < LIVES_START) {
+                isPaused = true;
+                lives++;
+                cavalloEnergy = 0;
+                updateLivesDisplay();
+                updateCavalloDisplay();
+                
+                van.color = '#10b981'; // Green
+                setTimeout(() => van.color = van.defaultColor, 100);
+                
+                showHealAnimation(); 
+            }
+        }
+        
+        function shoot(bulletSpeedPPS) {
+            if (!isGameRunning || isPaused) return;
+
+            if (ammunition >= SHOT_COST) {
+                ammunition -= SHOT_COST;
+                // NOTA: La classe Bullet riceve la velocità in PPS in updateGame
+                bullets.push(new Bullet(van.x, van.y)); 
+                updateAmmoDisplay();
+                
+                van.color = '#FFD700'; 
+                setTimeout(() => van.color = van.defaultColor, 50);
+            }
+        }
+
+        /**
+         * Determina se la collisione tra Van e Skater è frontale.
+         */
+        function isFrontalCollision(van, skater) {
+            // Se il punto di collisione è la metà frontale della Skater
+            const hitsFrontHalf = van.x + van.width > skater.x && van.x + van.width < skater.x + skater.width / 2;
+            
+            // Un po' di tolleranza sulla Y per le collisioni laterali
+            const isVerticalyAligned = van.y + van.height > skater.y + skater.height / 4 && van.y < skater.y + skater.height * 3 / 4;
+            
+            return hitsFrontHalf && isVerticalyAligned;
+        }
+
+        /**
+         * Attiva il potere del lupo: rende le pattinatrici attuali agganciabili.
+         */
+        function activateWolfPower() {
+            // Seleziona solo le pattinatrici libere, non ancora agganciate, non crashate e non ancora agganciabili
+            const freeSkaters = dots.filter(e => e instanceof Skater && !e.isHitched && !e.isHitchable && !e.isCrashed);
+            
+            if (freeSkaters.length > 0) {
+                
+                // 1. Riproduci suoni
+                audioUnaFemmina.play().catch(e => console.error("Error playing unafemmina.mp3:", e));
+                setTimeout(() => {
+                    audioClackson.play().catch(e => console.error("Error playing clackson.mp3:", e));
+                }, 500); 
+
+                // 2. Rendi queste pattinatrici agganciabili
+                freeSkaters.forEach(s => s.isHitchable = true);
+                
+                // Feedback visivo sul van
+                van.color = '#FFA500'; // Arancione/Oro per il lupo
+                setTimeout(() => van.color = van.defaultColor, 200);
+            }
+        }
+        
+        /**
+         * Gestisce il movimento del trenino agganciato.
+         */
+        function updateHitchTrain() {
+            let prevX = van.x;
+            let prevY = van.y;
+            let prevWidth = van.width;
+            let prevHeight = van.height;
+
+            hitchedEntities.forEach(hitch => {
+                
+                // Posizione: dietro l'oggetto precedente (Van o altra Pattinatrice)
+                let targetX = prevX - hitch.width - HITCH_GAP; 
+                let targetY = prevY + (prevHeight / 2) - (hitch.height / 2);
+                
+                // Movimento diretto (senza interpolazione)
+                hitch.x = targetX;
+                hitch.y = targetY;
+                
+                // Aggiorna le dimensioni per il prossimo aggancio
+                prevX = hitch.x;
+                prevY = hitch.y;
+                prevWidth = hitch.width;
+                prevHeight = hitch.height;
+            });
+        }
+        
+        /**
+         * Controlla le collisioni tra il treno agganciato (Skater) e gli oggetti (Siringhe, Risorse).
+         */
+        function checkHitchTrainCollisions() {
+            
+            // 1. Definisci gli oggetti che possono raccogliere (Van + Treno)
+            const collisionObjects = [van, ...hitchedEntities];
+            
+            // 2. Collisione Treno/Van - Risorse (Dots and AmmoKits)
+            collisionObjects.forEach(obj => {
+                dots.forEach(entity => {
+                    // Non controllare Siringhe, Skater (o entità già raccolte/colpite) in questo loop.
+                    if (entity.isCollected || entity.isHit || entity instanceof Syringe || entity instanceof Skater) return; 
+
+                    // Verifica la collisione con il "corpo" dell'oggetto (Van o Skater agganciato)
+                    if (entity.checkCollision(obj)) {
+                        
+                        entity.isCollected = true; // Rimosso alla fine del ciclo
+                        
+                        if (entity instanceof AmmoKit) {
+                            ammunition = Math.min(ammunition + AMMO_GAIN, AMMO_MAX);
+                            updateAmmoDisplay();
+                        } else if (entity instanceof Dot) {
+                            if (entity.type === 'red') {
+                                score += SCORE_GAIN;
+                            } else if (entity.type === 'blue') {
+                                // Mascherina colpita dal Treno/Van senza proiettile = danno e rimozione.
+                                // Se non venisse rimossa, causerebbe danno continuo.
+                                score -= SCORE_LOSS_VAN_MASK; 
+                            } else if (entity.type === 'pink') { 
+                                if (cavalloEnergy < CAVALLO_MAX_ENERGY) {
+                                    cavalloEnergy = Math.min(cavalloEnergy + PINK_SHEEP_GAIN, CAVALLO_MAX_ENERGY);
+                                }
+                                updateCavalloDisplay();
+                            }
+                            scoreDisplay.textContent = score;
+                        }
+                    }
+                });
+            });
+            
+            // 3. Collisione Siringa - Treno (l'ultima si sgancia)
+            // Filtriamo l'array dots per rimuovere le siringhe che colpiscono il treno
+            dots = dots.filter(entity => {
+                // Se non è una siringa, la manteniamo nell'array
+                if (!(entity instanceof Syringe)) return true; 
+
+                // Se c'è un treno agganciato, controlla la collisione solo sull'ultima pattinatrice
+                if (hitchedEntities.length > 0) {
+                    const lastHitch = hitchedEntities[hitchedEntities.length - 1]; 
+                    
+                    if (entity.checkCollision(lastHitch)) {
+                        
+                        // Ultima pattinatrice si sgancia/perde
+                        lastHitch.isLost = true; 
+                        lastHitch.isHitched = false;
+                        hitchedEntities.pop(); // Rimuovi dal treno
+                        
+                        // La siringa è consumata
+                        return false; 
+                    }
+                }
+                
+                // Se è una siringa e non ha colpito il treno, la manteniamo
+                return true; 
+            });
+            
+            // 4. Rimuovi entità raccolte (Dots e AmmoKits)
+            dots = dots.filter(entity => !entity.isCollected);
+        }
+
+        function initializeGame() {
+            canvas.width = GAME_WIDTH;
+            canvas.height = GAME_HEIGHT;
+            score = 0;
+            lives = LIVES_START; 
+            cavalloEnergy = 0; 
+            ammunition = 0; 
+            bullets = []; 
+            isPaused = false;
+            dots = [];
+            
+            // FIX/SETUP: Reset Pattinatrici agganciate e tempo animazione
+            hitchedEntities = []; 
+            lastSkaterFrameTime = performance.now(); 
+            skaterImageIndex = 1; 
+            
+            frameCount = 0;
+            currentSpeedMultiplier = 1.0; 
+
+            scoreDisplay.textContent = score;
+            updateLivesDisplay();
+            updateCavalloDisplay(); 
+            updateAmmoDisplay(); 
+            const startY = GAME_HEIGHT / 2 - VAN_HEIGHT / 2;
+            van = new Van(50, startY);
+            
+            milkSprayCanvas.width = GAME_WIDTH; 
+            milkSprayCanvas.height = GAME_HEIGHT;
+            stopMilkFlow(); 
+            
+            messageScreen.style.display = 'none'; 
+            deathImageContainer.style.display = 'none'; 
+            deathCharacterImage.style.display = 'none'; 
+            dartImage.style.display = 'none'; 
+        }
+
+        function spawnDotOrSyringe() {
+            const isSyringe = Math.random() < SYRINGE_CHANCE;
+            const isPinkSheep = !isSyringe && Math.random() < PINK_SHEEP_CHANCE;
+            const isAmmoKit = !isSyringe && !isPinkSheep && Math.random() < AMMO_CHANCE; 
+            const isSkater = !isSyringe && !isPinkSheep && !isAmmoKit && Math.random() < SKATER_SPAWN_CHANCE;
+
+            let entityHeight;
+            let entity;
+
+            if (isSkater) {
+                entityHeight = SKATER_HEIGHT;
+                const y = Math.random() * (GAME_HEIGHT - entityHeight * 2) + entityHeight; 
+                entity = new Skater(y);
+            } else if (isAmmoKit) {
+                entityHeight = 30; 
+                const y = Math.random() * (GAME_HEIGHT - entityHeight * 2) + entityHeight; 
+                entity = new AmmoKit(y);
+            } else if (isSyringe) {
+                entityHeight = SYRINGE_HEIGHT;
+                const y = Math.random() * (GAME_HEIGHT - entityHeight * 2) + entityHeight; 
+                entity = new Syringe(y);
+            } else {
+                entityHeight = DOT_EMOJI_SIZE;
+                const y = Math.random() * (GAME_HEIGHT - entityHeight * 2) + entityHeight;
+                let type = isPinkSheep ? 'pink' : (Math.random() < 0.7 ? 'red' : 'blue');
+                entity = new Dot(y, type);
+            }
+
+            if (entity) dots.push(entity);
+        }
+
+        function updateGame(delta) {
+            
+            // Calcola il moltiplicatore di velocità in base al punteggio: +10% ogni 100 punti
+            const scoreThreshold = Math.floor(score / 100);
+            currentSpeedMultiplier = 1.0 + (scoreThreshold * 0.1); 
+            
+            // Calcola il delta tempo in secondi per movimenti indipendenti dal frame rate
+            const deltaSeconds = delta / 1000;
+
+            // Applicazione della velocità dinamica (in PPS)
+            const vanSpeedPPS = BASE_VAN_SPEED_PPS * currentSpeedMultiplier;
+            const dotSpeedPPS = BASE_DOT_SPEED_PPS * currentSpeedMultiplier;
+            const bulletSpeedPPS = BASE_BULLET_SPEED_PPS * currentSpeedMultiplier;
+            const skaterSpeedPPS = BASE_SKATER_SPEED_PPS * currentSpeedMultiplier;
+            
+            // Aggiorna frame animazione pattinatrice (basato su tempo, non su delta, per essere costante)
+            if (performance.now() - lastSkaterFrameTime > SKATER_ANIMATION_MS) {
+                skaterImageIndex = skaterImageIndex === 1 ? 2 : 1;
+                lastSkaterFrameTime = performance.now();
+            }
+
+            // 1. Update Movimento Van
+            van.update(vanSpeedPPS, deltaSeconds);
+            
+            // 2. Update/Filter Dots, Syringes, AmmoKits, Skaters (Off-screen check)
+            dots.forEach(entity => {
+                 // Aggiorna la velocità dell'entità in base al tipo
+                if (entity instanceof Syringe) {
+                    // La siringa usa il dotSpeedPPS, la velocità x1.5 è gestita nel suo metodo update
+                    entity.update(dotSpeedPPS, deltaSeconds); 
+                } else if (entity instanceof Skater) {
+                    // Passa la velocità del dot (per i crash) e la velocità base dello skater
+                    entity.update(skaterSpeedPPS, dotSpeedPPS, deltaSeconds); 
+                } else {
+                    entity.update(dotSpeedPPS, deltaSeconds);
+                }
+            }); 
+            
+            // Filtra fuori le entità che sono uscite dallo schermo
+            dots = dots.filter(entity => {
+                const entityWidth = (entity instanceof Syringe) ? entity.width + 10 : (entity instanceof Dot ? entity.radius * 2 : (entity instanceof Skater ? entity.width : entity.width));
+                
+                // Le pattinatrici crashate e quelle normali vengono rimosse quando escono dallo schermo
+                const isOffScreen = entity.x < -entityWidth;
+                
+                return !isOffScreen;
+            });
+
+            if (frameCount % SPAWN_INTERVAL === 0) {
+                spawnDotOrSyringe();
+            }
+
+            // 3. Update/Filter Bullets
+            bullets.forEach(bullet => bullet.update(bulletSpeedPPS, deltaSeconds));
+            bullets = bullets.filter(bullet => bullet.x < GAME_WIDTH); 
+
+            // 4. Check Bullet-Enemy Collisions (Mascherine e Siringhe)
+            bullets.forEach(bullet => {
+                if (bullet.isHit) return;
+
+                dots.forEach(entity => {
+                    if (entity.isHit || entity.isCollected) return;
+
+                    // I proiettili colpiscono Siringhe e Mascherine (dot blu)
+                    if (bullet.checkCollision(entity)) {
+                        
+                        let pointsGained = 0;
+
+                        if (entity instanceof Syringe) {
+                            pointsGained = SCORE_GAIN_BULLET_SYRINGE; // +50 Punti
+                        } else if (entity instanceof Dot && entity.type === 'blue') {
+                            pointsGained = SCORE_GAIN_BULLET_MASK; // +20 Punti
+                        }
+                        
+                        if (pointsGained > 0) {
+                            bullet.isHit = true;
+                            entity.isHit = true; 
+                            score += pointsGained; 
+                            scoreDisplay.textContent = score; 
+
+                            // Feedback visivo
+                            van.color = '#FFD700'; 
+                            setTimeout(() => van.color = van.defaultColor, 50);
+                            // RIMOZIONE AUDIOCOLPO: Non si riproduce se colpito da sparo
+                        }
+                    }
+                });
+            });
+            
+            bullets = bullets.filter(bullet => !bullet.isHit);
+            dots = dots.filter(entity => !entity.isHit); 
+
+            // 5. Check Van-Skater/Syringe Collisions
+            const newHitched = [];
+
+            dots.forEach(entity => {
+                if (entity.isCollected || entity.isHitched || entity.isLost || entity.isCrashed) return;
+
+                if (entity.checkCollision(van)) {
+                    
+                    if (entity instanceof Skater) {
+                        
+                        let isAccident = true; // Default: l'incidente accade sempre tranne aggancio
+                        
+                        // Solo se agganciabile controlliamo se è possibile agganciare (non incidentare)
+                        if (entity.isHitchable) {
+                            const isFrontal = isFrontalCollision(van, entity);
+                            
+                            if (isFrontal) {
+                                // Frontale: Incidente anche se agganciabile
+                                isAccident = true; 
+                            } else {
+                                // Laterale/Posteriore: Aggancio
+                                isAccident = false; 
+                            }
+                        } else {
+                             // Non agganciabile: sempre incidente
+                             isAccident = true;
+                        }
+
+                        if (isAccident) {
+                            // *** INCIDENTE LOGIC (Logica Pattinatrice) ***
+                            audioColpo.play().catch(e => {}); // Suono riprodotto SOLO qui (come richiesto)
+                            entity.rotation = Math.PI / 2; // Rotazione 90 gradi
+                            entity.isCrashed = true; // Mark come crashata
+                            
+                            // L'entità rimane nell'array dots e viene rimossa quando esce dallo schermo.
+                            
+                        } else {
+                            // *** HITCHING LOGIC (Aggancio) ***
+                            entity.rotation = 0; 
+                            entity.isHitched = true; 
+                            entity.isHitchable = false;
+                            newHitched.push(entity);
+                        }
+                    } else if (entity instanceof Syringe) {
+                        // Colpisce il VAN (non il treno) -> Perdi una vita
+                        entity.isHit = true; 
+                        
+                        const lifeLost = lives; 
+                        lives--;
+                        updateLivesDisplay();
+                        updateCavalloDisplay(); 
+                        
+                        van.color = '#ff0000'; 
+                        setTimeout(() => van.color = van.defaultColor, 100);
+                        
+                        isPaused = true;
+                        
+                        if (lives >= 1) {
+                            showTemporaryDeathScreen(LIFE_IMAGES[lifeLost]);
+                        }
+                    } else {
+                        // Dot/AmmoKit: La loro collisione con Van/Treno è gestita da checkHitchTrainCollisions
+                    }
+                }
+            });
+
+            // Aggiunge le pattinatrici appena agganciate al treno
+            hitchedEntities = hitchedEntities.concat(newHitched);
+            
+            // Rimuove gli skater appena agganciati dall'array dots (ora sono in hitchedEntities)
+            dots = dots.filter(entity => !(entity instanceof Skater && entity.isHitched));
+            
+            // 6. Update Hitch Train Movement
+            updateHitchTrain();
+            
+            // 7. Check Hitch Train Collisions (Syringes and Resources)
+            checkHitchTrainCollisions();
+
+            // Rimuovi entità colpite (Siringhe che hanno colpito il VAN/treno, DOTS/AMMO raccolti)
+            dots = dots.filter(entity => !entity.isHit && !entity.isCollected);
+
+            if (lives <= 0) {
+                gameOver();
+            }
+
+            frameCount++;
+        }
+
+        function drawRoad(dotSpeedPPS) {
+            ctx.fillStyle = '#3a3a3a';
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            const roadLineHeight = 5;
+            const roadLineY = GAME_HEIGHT / 2 - roadLineHeight / 2;
+            const dashLength = 20;
+            const dashGap = 20;
+            // Velocità delle linee proporzionale alla dotSpeedPPS (pixel/secondo)
+            const lineSpeed = dotSpeedPPS / 60; // Convertita in circa pixel per frame
+            
+            ctx.strokeStyle = '#fef3c7';
+            ctx.lineWidth = roadLineHeight;
+            ctx.lineCap = 'butt';
+            const totalWidth = dashLength + dashGap;
+            const lineOffset = (frameCount * lineSpeed) % totalWidth;
+
+            ctx.beginPath();
+            for (let i = 0; i < GAME_WIDTH + totalWidth; i += totalWidth) {
+                let startX = i - lineOffset;
+                if (startX < -dashLength) {
+                    startX += totalWidth; 
+                }
+                if (startX + dashLength > 0 && startX < GAME_WIDTH) {
+                    ctx.moveTo(startX, roadLineY);
+                    ctx.lineTo(startX + dashLength, roadLineY);
+                }
+            }
+            ctx.stroke();
+            ctx.fillStyle = '#65a30d';
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT * 0.1);
+            ctx.fillRect(0, GAME_HEIGHT * 0.9, GAME_WIDTH, GAME_HEIGHT * 0.1);
+        }
+
+        function drawGame() {
+            // Disegna la strada con la velocità attuale (moltiplicatore applicato)
+            const dotSpeedPPS = BASE_DOT_SPEED_PPS * currentSpeedMultiplier;
+            drawRoad(dotSpeedPPS);
+            
+            dots.forEach(entity => entity.draw());
+            bullets.forEach(bullet => bullet.draw()); 
+            van.draw();
+            // Disegna le pattinatrici agganciate (il trenino)
+            hitchedEntities.forEach(hitch => hitch.draw());
+        }
+
+        function gameLoop(timestamp) {
+            if (!isGameRunning) return;
+
+            // 1. FPS Throttle (Limite 120 FPS)
+            if (timestamp < lastFrameTime + FRAME_DURATION) {
+                requestAnimationFrame(gameLoop);
+                return; 
+            }
+            
+            // Aggiorna il tempo dell'ultimo frame disegnato per il throttle
+            lastFrameTime = timestamp; 
+
+            // 2. Logica di Pausa
+            if (isPaused) {
+                gameSoundtrack.volume = VOLUME_MENU;
+                animateMilkSpray(timestamp);
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            
+            // 3. Calcolo Delta e FPS 
+            const delta = timestamp - lastUpdateTime;
+            const fps = Math.round(1000 / delta);
+            fpsDisplay.textContent = fps;
+            
+            // 4. Aggiorna il tempo di riferimento per il calcolo del delta successivo
+            lastUpdateTime = timestamp; 
+
+            // 5. Update e Draw
+            updateGame(delta); 
+            drawGame();
+            animateMilkSpray(timestamp);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            // Controlla se le immagini sono state caricate prima di iniziare
+            if (Object.keys(skaterImages).length < TOTAL_IMAGES_TO_LOAD) {
+                console.error("Le immagini non sono state caricate. Riprova o verifica i percorsi.");
+                return; 
+            }
+            
+            initializeGame();
+            isGameRunning = true;
+            
+            gameSoundtrack.volume = VOLUME_NORMAL;
+            gameSoundtrack.play().catch(error => {});
+            
+            lastUpdateTime = performance.now(); // Inizializza il tempo di riferimento per il delta
+            lastFrameTime = performance.now(); // Inizializza il tempo di riferimento per l'FPS throttle
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        function togglePause() {
+            if (!isGameRunning || lives <= 0 || deathImageContainer.style.display === 'flex') return; 
+
+            isPaused = !isPaused;
+            
+            if (isPaused) {
+                keys = {}; 
+                // Il volume è abbassato in gameLoop quando isPaused è true
+                gameSoundtrack.play().catch(error => {}); 
+                
+                messageScreen.style.backgroundImage = "url('img/wallpaper.png')";
+                messageScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.35)'; 
+                messageScreen.style.backgroundBlendMode = 'multiply';
+                
+                messageTitle.textContent = "GIOCO IN PAUSA";
+                messageText.textContent = "Premi ESC per riprendere.";
+                messageTitle.style.display = 'block';
+                messageText.style.display = 'block';
+                startButton.style.display = 'none'; 
+                messageScreen.style.display = 'flex';
+            } else {
+                gameSoundtrack.volume = VOLUME_NORMAL;
+                messageScreen.style.display = 'none';
+                
+                // FIX CRITICO: Resetta il tempo di riferimento alla ripresa
+                const now = performance.now();
+                lastUpdateTime = now; 
+                lastFrameTime = now;
+                
+                requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        function gameOver() {
+            isGameRunning = false;
+            
+            gameSoundtrack.volume = VOLUME_MENU;
+            van.color = '#4a5568'; 
+            
+            deathImageContainer.style.display = 'none';
+            deathCharacterImage.style.display = 'none';
+            dartImage.style.display = 'none';
+            
+            stopMilkFlow();
+
+            messageScreen.style.backgroundImage = `url('${LIFE_IMAGES[1]}')`; 
+            messageScreen.style.backgroundSize = 'cover';
+            messageScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)'; 
+            messageScreen.style.backgroundBlendMode = 'multiply'; 
+            
+            messageTitle.textContent = "GAME OVER!";
+            messageText.textContent = `Vi hanno siringati tutti. Punteggio finale: ${score}.`; 
+            startButton.textContent = "Guarisci dalla morte";
+            
+            messageTitle.style.display = 'block';
+            messageText.style.display = 'block';
+            startButton.style.display = 'inline-block';
+            messageScreen.style.display = 'flex'; 
+        }
+
+        function showTemporaryDeathScreen(imageSet) {
+            messageScreen.style.display = 'none';
+            deathImageContainer.style.display = 'flex';
+            deathCharacterImage.src = imageSet.base;
+            deathCharacterImage.style.display = 'block';
+
+            isPaused = true;
+            gameSoundtrack.volume = VOLUME_MENU;
+            stopMilkFlow(); 
+
+            dartImage.style.transition = 'none';
+            dartImage.style.transform = 'translate(0, 0) rotate(10deg)'; 
+            dartImage.style.top = '0';
+            dartImage.style.right = '0'; 
+            dartImage.style.display = 'block'; 
+
+            void dartImage.offsetWidth; 
+
+            dartImage.style.transition = `transform ${BASE_IMAGE_MS}ms linear`;
+            dartImage.style.transform = 'translate(-280px, 260px) rotate(15deg)'; 
+
+            setTimeout(() => {
+                deathCharacterImage.src = imageSet.flash;
+                
+                setTimeout(() => {
+                    keys = {};
+                    deathImageContainer.style.display = 'none';
+                    deathCharacterImage.style.display = 'none';
+                    dartImage.style.display = 'none'; 
+
+                    gameSoundtrack.volume = VOLUME_NORMAL;
+                    isPaused = false;
+                    const now = performance.now();
+                    lastUpdateTime = now; // Resetta il tempo dopo l'animazione di morte
+                    lastFrameTime = now;
+                    requestAnimationFrame(gameLoop);
+                }, FLASH_IMAGE_MS); 
+
+            }, BASE_IMAGE_MS); 
+        }
+
+
+        // --------------------------------------------------------
+        // GESTIONE INPUT 
+        // --------------------------------------------------------
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                togglePause();
+            }
+            
+            if (e.key.toUpperCase() === 'S' && !healButton.disabled && isGameRunning && !isPaused) {
+                e.preventDefault(); 
+                healAlly();
+            }
+            
+            if (e.key.toUpperCase() === 'F' && isGameRunning && !isPaused) {
+                e.preventDefault(); 
+                // La velocità è precalcolata in updateGame
+                shoot(); 
+            }
+            
+            // NUOVO: Tasto D per Potere Lupo
+            if (e.key.toUpperCase() === 'D' && isGameRunning && !isPaused) {
+                e.preventDefault();
+                activateWolfPower();
+            }
+
+            if (isGameRunning && !isPaused) {
+                keys[e.key] = true;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (isGameRunning && !isPaused) {
+                keys[e.key] = false;
+            }
+        });
+        
+        document.addEventListener('click', () => {
+            if (gameSoundtrack.paused || gameSoundtrack.volume < VOLUME_NORMAL) {
+                gameSoundtrack.volume = VOLUME_NORMAL; 
+                gameSoundtrack.play().catch(error => {});
+            }
+        }, { once: true });
+
+
+        // --------------------------------------------------------
+        // SETUP INIZIALE
+        // --------------------------------------------------------
+
+        window.onload = function () {
+            // Prima di tutto, carica le immagini necessarie
+            loadImages(() => {
+                initializeGame();
+                isGameRunning = false;
+                gameSoundtrack.volume = VOLUME_MENU; 
+                gameSoundtrack.play().catch(error => {}); 
+                
+                messageScreen.style.backgroundImage = "url('img/wallpaper.png')";
+                messageScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.35)'; 
+                
+                messageScreen.style.display = 'flex'; 
+                messageTitle.style.display = 'block';
+                messageText.style.display = 'block';
+                startButton.style.display = 'inline-block';
+            });
+        }
+
+    </script>
+</body>
+</html>
